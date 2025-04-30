@@ -238,7 +238,6 @@ st.title("🚘 Car Assistant")
 
 tabs = st.tabs(["🔍 Match by Description", "💰 Estimate Price", "📆 Credit Calc"])
 # === Tab 1: Match by Description ===
-# === Tab 1: Match by Description ===
 with tabs[0]:
     st.markdown("### 🧾 Опишите автомобиль своей мечты и позвольте нам порекомендовать вам тип топлива, трансмиссию и тип кузова:")
 
@@ -252,137 +251,120 @@ with tabs[0]:
             st.error("Неверный пароль")
 
     if not is_admin:
-        # === Пользовательский режим ===
         query = st.text_area("💬 Ваш запрос:", key="user_query")
         if st.button("✨ Find Best Match", key="desc_button"):
-            if query.strip() == "":
-                st.warning("🚨 Please enter a description.")
+            if not query.strip():
+                st.warning("Пожалуйста, введите описание автомобиля.")
             else:
-                results = semantic_search_grouped(query, top_k=1)
-                feedback = {"query": query, "timestamp": str(datetime.now()), "results": {}, "rating": None, "comment": ""}
-
-                st.markdown("### ✅ Suggested Specs:")
-                selected_specs = {}
-                for cat, matches in results.items():
-                    best_label = matches[0][0] if matches else "Не найдено"
-                    st.markdown(f"**{cat}:** {best_label}")
-                    selected_specs[cat] = best_label
-                    feedback["results"][cat] = matches
-
-                # Рекомендации
-                st.markdown("---")
-                st.markdown("### 🚗 Рекомендуемые автомобили:")
-
                 try:
-                    filtered_cars = raw_data.copy()
+                    # Очищаем кэш перед новым поиском
+                    st.cache_data.clear()
+                    
+                    # Получаем рекомендации
+                    results = semantic_search_grouped(query.strip(), top_k=1)
+                    feedback = {
+                        "query": query,
+                        "timestamp": str(datetime.now()),
+                        "results": {},
+                        "rating": None,
+                        "comment": ""
+                    }
 
-                    if 'Кузов' in selected_specs:
-                        filtered_cars = filtered_cars[filtered_cars['Car_type'].str.lower() == selected_specs['Кузов'].lower()]
-                    if 'Трансмиссия' in selected_specs:
-                        filtered_cars = filtered_cars[filtered_cars['Transmission'].str.lower() == selected_specs['Трансмиссия'].lower()]
-                    if 'Топливо' in selected_specs:
-                        filtered_cars = filtered_cars[filtered_cars['Fuel Type'].str.lower() == selected_specs['Топливо'].lower()]
+                    st.markdown("### ✅ Рекомендуемые характеристики:")
+                    selected_specs = {}
+                    for cat, matches in results.items():
+                        if matches:  # Проверяем, что есть совпадения
+                            best_label, score = matches[0]
+                            st.markdown(f"**{cat}:** {best_label} (сходство: {score:.2f})")
+                            selected_specs[cat] = best_label.lower().strip()
+                            feedback["results"][cat] = matches
 
-                    if not filtered_cars.empty:
-                        filtered_cars = filtered_cars.sort_values('Price')
-                        budget_car = filtered_cars.iloc[max(0, int(len(filtered_cars) * 0.25))]
-                        mid_car = filtered_cars.iloc[int(len(filtered_cars) * 0.5)]
-                        premium_car = filtered_cars.iloc[min(int(len(filtered_cars) * 0.75), len(filtered_cars)-1)]
-
-                        col1, col2, col3 = st.columns(3)
-                        for col, car in zip([col1, col2, col3], [budget_car, mid_car, premium_car]):
-                            with col:
-                                st.markdown(f"**{car['Company']} {car['Mark']}**")
-                                st.markdown(f"Год: {car['Year']}")
-                                st.markdown(f"Пробег: {car['Mileage']:,} км")
-                                st.markdown(f"Цена: **{int(car['Price']):,} ₸**")
-
-                        with st.expander("🔍 Показать все подходящие варианты"):
-                            st.dataframe(filtered_cars[['Company', 'Mark', 'Year', 'Price', 'Mileage', 'Fuel Type', 'Transmission', 'Car_type']].sort_values('Price'))
-                    else:
-                        st.warning("К сожалению, в нашей базе нет автомобилей с такими характеристиками.")
-                except Exception as e:
-                    st.error(f"Произошла ошибка при поиске автомобилей: {str(e)}")
-
-                st.subheader("📝 Оцените результат")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("👍 Всё подошло", key="like_btn"):
-                        feedback["rating"] = "like"
-                        save_feedback(feedback)
-                        st.success("Спасибо за положительную оценку!")
-                with col2:
-                    if st.button("👎 Не подошло", key="dislike_btn"):
-                        feedback["rating"] = "dislike"
-                        feedback["comment"] = st.text_input("Комментарий (по желанию)", key="comment_input")
-                        save_feedback(feedback)
-                        st.warning("Ваш отзыв сохранён. Спасибо!")
-
-    else:
-        # === Админский режим ===
-        st.subheader("📋 Отчёты от пользователей")
-        if os.path.exists(FEEDBACK_PATH):
-            with open(FEEDBACK_PATH, "r", encoding="utf-8") as f:
-                fb_data = json.load(f)
-
-            sort_option = st.selectbox("Сортировка отзывов:", ["Все", "Только лайки", "Только дизлайки"], key="sort_feedback")
-            filtered_fb = fb_data
-            if sort_option == "Только лайки":
-                filtered_fb = [x for x in fb_data if x.get("rating") == "like"]
-            elif sort_option == "Только дизлайки":
-                filtered_fb = [x for x in fb_data if x.get("rating") == "dislike"]
-
-            for i, entry in enumerate(reversed(filtered_fb)):
-                feedback_index = len(fb_data) - 1 - i
-                short = entry['query'][:40] + '...' if len(entry['query']) > 40 else entry['query']
-                with st.expander(f"#{feedback_index + 1} — {short}"):
-                    st.markdown(f"**Полный запрос:** {entry['query']}")
-                    st.markdown(f"**Оценка:** {entry['rating']}")
-                    st.markdown(f"**Дата:** {entry['timestamp']}")
-                    for cat, matches in entry["results"].items():
-                        st.markdown(f"**{cat}:**")
-                        for label, score in matches:
-                            st.write(f"- {label}: {score}")
-                    if entry.get("comment"):
-                        st.markdown(f"**Комментарий:** {entry['comment']}")
-
+                    # Рекомендации автомобилей
                     st.markdown("---")
-                    st.markdown("**➡️ Добавить этот запрос в категорию:**")
-                    fb_cat = st.selectbox("Категория:", list(category_blocks.keys()), key=f"fbcat_{i}")
-                    fb_cls = st.selectbox("Класс:", list(category_blocks[fb_cat].keys()), key=f"fbcls_{i}")
+                    st.markdown("### 🚗 Рекомендуемые автомобили:")
 
-                    if st.button("📥 Добавить запрос", key=f"addfb_{i}"):
-                        add_to_category(fb_cat, fb_cls, entry['query'])
+                    try:
+                        filtered_cars = raw_data.copy()
+                        
+                        # Нормализуем данные перед сравнением
+                        if 'Кузов' in selected_specs:
+                            body_type = selected_specs['Кузов']
+                            filtered_cars = filtered_cars[
+                                filtered_cars['Car_type'].str.strip().str.lower() == body_type
+                            ]
+                        
+                        if 'Трансмиссия' in selected_specs:
+                            transmission = selected_specs['Трансмиссия']
+                            filtered_cars = filtered_cars[
+                                filtered_cars['Transmission'].str.strip().str.lower() == transmission
+                            ]
+                        
+                        if 'Топливо' in selected_specs:
+                            fuel_type = selected_specs['Топливо']
+                            filtered_cars = filtered_cars[
+                                filtered_cars['Fuel Type'].str.strip().str.lower() == fuel_type
+                            ]
 
-                        if "corrections" not in entry:
-                            entry["corrections"] = []
-                        entry["corrections"].append(f"Добавлено в {fb_cat} → {fb_cls}")
-                        save_feedback(entry)
+                        if not filtered_cars.empty:
+                            filtered_cars = filtered_cars.sort_values('Price')
+                            
+                            # Берем разные ценовые категории
+                            budget_idx = max(0, int(len(filtered_cars) * 0.25))
+                            mid_idx = int(len(filtered_cars) * 0.5)
+                            premium_idx = min(int(len(filtered_cars) * 0.75), len(filtered_cars)-1)
+                            
+                            budget_car = filtered_cars.iloc[budget_idx]
+                            mid_car = filtered_cars.iloc[mid_idx]
+                            premium_car = filtered_cars.iloc[premium_idx]
 
-                        st.success("Добавлено в описание!")
+                            cols = st.columns(3)
+                            price_types = ["💰 Бюджетный", "💎 Средний", "🚀 Премиум"]
+                            
+                            for col, car, price_type in zip(cols, [budget_car, mid_car, premium_car], price_types):
+                                with col:
+                                    st.markdown(f"#### {price_type} вариант")
+                                    st.markdown(f"**{car['Company']} {car['Mark']}**")
+                                    st.markdown(f"**Год:** {car['Year']}")
+                                    st.markdown(f"**Пробег:** {car['Mileage']:,} км")
+                                    st.markdown(f"**Цена:** {int(car['Price']):,} ₸")
 
-                    if entry.get("corrections"):
-                        st.markdown("**🛠 Корректировки:**")
-                        for c in entry["corrections"]:
-                            st.write("-", c)
+                            with st.expander("🔍 Показать все подходящие варианты"):
+                                st.dataframe(
+                                    filtered_cars[
+                                        ['Company', 'Mark', 'Year', 'Price', 
+                                         'Mileage', 'Fuel Type', 'Transmission', 'Car_type']
+                                    ].sort_values('Price')
+                                )
+                        else:
+                            st.warning("Не найдено автомобилей с указанными характеристиками.")
+                            st.write("Попробуйте изменить параметры поиска.")
+                            
+                    except Exception as e:
+                        st.error(f"Ошибка при фильтрации автомобилей: {str(e)}")
+                        st.write("Попробуйте другой запрос.")
 
-                    if st.button("🗑 Удалить этот отзыв", key=f"delfb_{i}"):
-                        delete_feedback(feedback_index)
-                        st.warning("Отзыв удалён. Обновите страницу.")
+                    # Оценка результата
+                    st.markdown("---")
+                    st.subheader("📝 Оцените результат")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("👍 Всё подошло", key="like_btn"):
+                            feedback["rating"] = "like"
+                            save_feedback(feedback)
+                            st.success("Спасибо за отзыв!")
+                    with col2:
+                        if st.button("👎 Не подошло", key="dislike_btn"):
+                            feedback["rating"] = "dislike"
+                            feedback["comment"] = st.text_input(
+                                "Что можно улучшить?", 
+                                key="comment_input"
+                            )
+                            save_feedback(feedback)
+                            st.success("Спасибо за обратную связь!")
 
-        else:
-            st.info("Пока нет отзывов от пользователей.")
-
-        st.markdown("---")
-        st.subheader("✍️ Ручная корректировка описаний")
-        category = st.selectbox("Выберите категорию:", list(category_blocks.keys()), key="edit_category")
-        label = st.selectbox("Выберите класс:", list(category_blocks[category].keys()), key="edit_label")
-        new_text = st.text_area("Изменить описание:", category_blocks[category][label], height=200, key="edit_text")
-
-        if st.button("💾 Сохранить изменения", key="save_edit"):
-            category_blocks[category][label] = new_text
-            save_data(category_blocks)
-            st.success("Описание обновлено и сохранено!")
+                except Exception as e:
+                    st.error(f"Ошибка при обработке запроса: {str(e)}")
+                    st.write("Попробуйте сформулировать запрос иначе.")
 # === Tab 2: Estimate Price ===
 with tabs[1]:
     st.markdown("### 📊 Enter your car's features to get a price estimate:")
