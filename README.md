@@ -1,1 +1,1 @@
-# DsProject
+CARTAP is a web application for car selection and price estimation. The system uses AI to recommend suitable cars based on user preferences. Machine learning models are used to predict a fair car price from vehicle features. The application also includes a built-in credit calculator to estimate monthly payments. All features are combined into a single, easy-to-use interface.
